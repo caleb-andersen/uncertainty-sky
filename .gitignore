@@ -1,0 +1,159 @@
+# ─── Data artefacts ────────────────────────────────────────────────────────
+# Nothing derived from the Gaia catalogue is ever committed. Everything here is
+# reproducible by running /pipeline; the repo carries the code, not the sky.
+
+# Packed binary buffers + meta.json consumed by the renderer (stage 2 output).
+/web/public/data/*
+!/web/public/data/.gitkeep
+
+# Pipeline intermediates and outputs (stage 1 output).
+/pipeline/data/
+/pipeline/out/
+/pipeline/cache/
+*.parquet
+*.feather
+*.vot
+*.votable
+*.fits
+*.fits.gz
+*.ecsv
+*.npy
+*.npz
+*.bin
+*.buf
+
+# astroquery / astropy caches and download temp files
+.astropy/
+.astroquery/
+**/astroquery_cache/
+*.tap_job
+*.async
+
+# ─── Python (/pipeline) ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.dmypy.json
+dmypy.json
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ─── Node / Vite (/web) ────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+
+# Build output
+/web/dist/
+/web/dist-ssr/
+dist/
+*.local
+
+# Caches
+.vite/
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── Capture artefacts (stage 7) ───────────────────────────────────────────
+# Screen recordings and edits live outside version control.
+/captures/
+/recordings/
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.gif
+*.flv
+
+# ─── Secrets and local config ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# ─── Editors / OS ──────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ─── Claude Code ───────────────────────────────────────────────────────────
+.claude/settings.local.json

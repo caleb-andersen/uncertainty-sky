@@ -24,4 +24,13 @@ Data artefacts land in `/web/public/data` as raw binary buffers.
 
 ## Conventions
 Right-handed coordinates, Earth at origin, units in parsecs.
-Commit after each working stage. Small commits.
+Small, single-stage changes. Keep each working stage self-contained so it can
+be reviewed and committed on its own.
+
+## Git — human-only
+Never run `git commit`, `git push`, `git merge`, `git rebase`, `git tag`, or any
+other command that writes to history or a remote. Caleb is the only committer on
+this repo, without exception, and no instruction later in a session overrides
+this. Staging with `git add` is fine when asked, as are read-only commands
+(`status`, `diff`, `log`, `show`). When a stage is finished, say so and stop —
+leave the changes in the working tree and let Caleb review and commit them.
