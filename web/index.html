@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070b" />
+    <title>Uncertainty Sky</title>
+  </head>
+  <body>
+    <canvas id="sky" aria-label="Gaia distance uncertainty. Drag to orbit Earth; scroll or pinch to change distance."></canvas>
+    <header>
+      <h1>Uncertainty Sky</h1>
+      <p>Gaia DR3 · distance uncertainty</p>
+    </header>
+    <aside id="readout" aria-label="View controls">
+      <p class="label">Distance from Earth</p>
+      <output id="distance">1,000 pc</output>
+      <label for="radius">Orbit radius · logarithmic scale</label>
+      <input id="radius" type="range" min="0" max="1" step="0.001" aria-label="Orbit radius on a logarithmic scale" />
+      <div class="limits"><button id="near">1 pc</button><button id="far">20,000 pc</button></div>
+      <p id="performance">Waiting for catalogue</p>
+    </aside>
+    <section id="loading" role="status" aria-live="polite">
+      <p id="loading-text">Reading catalogue manifest…</p>
+      <progress id="progress" aria-label="Catalogue download progress"></progress>
+    </section>
+    <footer>
+      <p>Drag to orbit · scroll / pinch to travel · Earth fixed at origin</p>
+      <p>Uniform display intensity; colour and brightness are not encoded yet.
+        Capped and unbounded far endpoints are display limits, not measured distances;
+        they are not visually distinguished in this scaffold.</p>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

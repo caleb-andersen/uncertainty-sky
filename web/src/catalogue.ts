@@ -1,0 +1,119 @@
+import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from 'three';
+
+const layout = {
+  position: ['<f4', 3, 4],
+  midpoint: ['<f4', 3, 4],
+  color: ['<u1', 1, 1],
+  brightness: ['<u1', 1, 1],
+  unbounded: ['<u1', 1, 1],
+} as const;
+type AttributeName = keyof typeof layout;
+
+interface AttributeMeta {
+  file: string;
+  byte_offset: number;
+  byte_length: number;
+  dtype: string;
+  bytes_per_component: number;
+  item_size: number;
+  count: number;
+  normalized: boolean;
+}
+interface Manifest {
+  stage: string;
+  byte_order: string;
+  stars: number;
+  vertices: number;
+  bounding_radius_pc: number;
+  attributes: Record<AttributeName, AttributeMeta>;
+}
+
+// Reject incompatible/truncated exports rather than quietly drawing wrong geometry.
+function validateManifest(value: Manifest): Manifest {
+  if (!value || value.stage !== 'pack' || value.byte_order !== 'little-endian' ||
+      !Number.isSafeInteger(value.stars) || value.stars <= 0 ||
+      value.vertices !== value.stars * 2 ||
+      !Number.isFinite(value.bounding_radius_pc) || value.bounding_radius_pc <= 0) {
+    throw new Error('Unsupported or empty catalogue manifest. Re-run pipeline/pack.py.');
+  }
+  for (const name of Object.keys(layout) as AttributeName[]) {
+    const attr = value.attributes?.[name];
+    const [dtype, size, bytes] = layout[name];
+    if (!attr || attr.file !== `${name}.bin` || attr.dtype !== dtype ||
+        attr.item_size !== size || attr.bytes_per_component !== bytes ||
+        attr.count !== value.vertices || attr.byte_offset !== 0 ||
+        attr.byte_length !== value.vertices * size * bytes || attr.normalized !== false) {
+      throw new Error(`Invalid ${name} attribute metadata. Re-run pipeline/pack.py.`);
+    }
+  }
+  // Typed-array views must agree with the packer's byte order.
+  if (new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) {
+    throw new Error('This catalogue requires a little-endian browser.');
+  }
+  return value;
+}
+
+async function streamAttribute(
+  attr: AttributeMeta, signal: AbortSignal, advance: (bytes: number) => void,
+): Promise<ArrayBuffer> {
+  const response = await fetch(`/data/${attr.file}`, { signal });
+  if (!response.ok) throw new Error(`${attr.file}: HTTP ${response.status}`);
+  if (!response.body) throw new Error(`${attr.file}: response has no readable stream`);
+  // Allocate once using the manifest; avoid retaining chunks plus a joined copy.
+  const buffer = new ArrayBuffer(attr.byte_length);
+  const destination = new Uint8Array(buffer);
+  const reader = response.body.getReader();
+  let offset = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (offset + value.byteLength > destination.byteLength) {
+        throw new Error(`${attr.file}: more bytes than declared in meta.json`);
+      }
+      destination.set(value, offset);
+      offset += value.byteLength;
+      advance(value.byteLength);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (offset !== destination.byteLength) {
+    throw new Error(`${attr.file}: expected ${destination.byteLength} bytes, received ${offset}`);
+  }
+  return buffer;
+}
+
+export async function loadCatalogue(onProgress: (loaded: number, total: number) => void) {
+  const abort = new AbortController();
+  const geometry = new BufferGeometry();
+  try {
+    const response = await fetch('/data/meta.json', { signal: abort.signal });
+    if (!response.ok) throw new Error(`meta.json: HTTP ${response.status}`);
+    if (response.headers.get('content-type')?.includes('text/html')) {
+      throw new Error('No /data/meta.json found. Run the Gaia pipeline through pack.py first.');
+    }
+    const meta = validateManifest(await response.json());
+    const names = Object.keys(layout) as AttributeName[];
+    const total = names.reduce((sum, name) => sum + meta.attributes[name].byte_length, 0);
+    let loaded = 0;
+    onProgress(loaded, total);
+    await Promise.all(names.map(async (name) => {
+      const attr = meta.attributes[name];
+      const buffer = await streamAttribute(attr, abort.signal, (bytes) => {
+        loaded += bytes;
+        onProgress(loaded, total);
+      });
+      const array = attr.dtype === '<f4' ? new Float32Array(buffer) : new Uint8Array(buffer);
+      // Keep raw scalar codes (including missing=0) for the next shader stage.
+      // LineBasicMaterial has vertexColors=false: scalar color is NOT an RGB attribute.
+      geometry.setAttribute(name, new BufferAttribute(array, attr.item_size, false));
+    }));
+    geometry.boundingSphere = new Sphere(new Vector3(), meta.bounding_radius_pc);
+    return { geometry, meta };
+  } catch (error) {
+    abort.abort();
+    geometry.dispose();
+    throw error;
+  }
+}
