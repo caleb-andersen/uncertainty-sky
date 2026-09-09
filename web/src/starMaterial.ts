@@ -2,7 +2,7 @@ import {
   AddEquation, ClampToEdgeWrapping, CustomBlending, DataTexture, NearestFilter,
   OneFactor, RGBAFormat, ShaderMaterial, UnsignedByteType, Vector2,
 } from 'three';
-import { RAMP_ENTRIES, buildColourRamp } from './palette';
+import { RAMP_ENTRIES, buildColourRamp } from './palette.ts';
 import type { Treatment } from './treatments';
 
 /**
@@ -43,6 +43,7 @@ uniform float uMorph;
 uniform vec2 uViewport;
 uniform float uNear;
 uniform float uMark;
+uniform float uPixelRatio;
 uniform float uFadeReference;
 uniform float uSpread;
 uniform float uGain;
@@ -83,16 +84,17 @@ void main() {
   vec4 midView = modelViewMatrix * vec4(midpoint, 1.0);
   vec3 axisView = normalize(mat3(modelViewMatrix) * lineOfSight);
   float halfLength = length(axis) * uMorph;
+  float markPixels = uMark * uPixelRatio;
 
   float pixelsPerParsec =
     0.5 * uViewport.y * projectionMatrix[1][1] / max(-midView.z, uNear);
-  halfLength = max(halfLength, 0.5 * uMark / max(pixelsPerParsec, 1e-8));
+  halfLength = max(halfLength, 0.5 * markPixels / max(pixelsPerParsec, 1e-8));
 
   vec3 nearEnd = midView.xyz - axisView * halfLength;
   vec3 farEnd = midView.xyz + axisView * halfLength;
   gl_Position = projectionMatrix * vec4(side < 0.0 ? nearEnd : farEnd, 1.0);
 
-  float mark = max(distance(toScreen(nearEnd), toScreen(farEnd)), uMark);
+  float mark = max(distance(toScreen(nearEnd), toScreen(farEnd)), markPixels);
   float ratio = length(midView.xyz) / uFadeReference;
   float attenuation = 1.0 / (1.0 + ratio * ratio);
 
@@ -103,13 +105,13 @@ void main() {
     ? uMagUnknown
     : mix(uMagFloor, 1.0, pow(magnitude, uMagGamma));
 
-  vWeight = uGain * attenuation * weight * pow(uMark / mark, uSpread);
+  vWeight = uGain * attenuation * weight * pow(markPixels / mark, uSpread);
   vTint = texture2D(uRamp, vec2((bpRpCode + 0.5) / ${RAMP_ENTRIES}.0, 0.5)).rgb;
 
   // Stars with no BP-RP are stippled. A negative mix means "draw solid"; for
   // the rest it fades the pattern out once the mark is too short to resolve,
   // so an unmeasured star dims but never vanishes.
-  float periods = mark / uDashPeriod;
+  float periods = mark / (uDashPeriod * uPixelRatio);
   vDashPhase = vSpan * periods;
   vDashMix = bpRpCode < 0.5 ? smoothstep(1.5, 3.5, periods) : -1.0;
 }
@@ -159,9 +161,19 @@ export interface StarMaterialOptions {
 }
 
 export function createStarMaterial({ bpRpDomain, treatment }: StarMaterialOptions) {
-  let bytes = buildColourRamp({
-    domain: bpRpDomain, chroma: treatment.chroma, unmeasured: treatment.unmeasured,
-  });
+  const ramps = new Map<Treatment, Uint8Array>();
+  function rampFor(next: Treatment) {
+    let cached = ramps.get(next);
+    if (!cached) {
+      cached = buildColourRamp({
+        domain: bpRpDomain, chroma: next.chroma, unmeasured: next.unmeasured,
+      });
+      ramps.set(next, cached);
+    }
+    return cached;
+  }
+  let bytes = rampFor(treatment);
+  const blendedBytes = new Uint8Array(bytes.length);
   const ramp = new DataTexture(bytes, RAMP_ENTRIES, 1, RGBAFormat, UnsignedByteType);
   // Nearest sampling, clamped wrap: a code must resolve to its own entry and
   // never to a blend with its neighbour or with the sentinel slot.
@@ -180,6 +192,7 @@ export function createStarMaterial({ bpRpDomain, treatment }: StarMaterialOption
       uFadeReference: { value: FADE_REFERENCE_PC.min },
       uRamp: { value: ramp },
       uMark: { value: treatment.mark },
+      uPixelRatio: { value: 1 },
       uSpread: { value: treatment.spread },
       uGain: { value: treatment.gain },
       uMagFloor: { value: treatment.magFloor },
@@ -203,38 +216,67 @@ export function createStarMaterial({ bpRpDomain, treatment }: StarMaterialOption
   });
 
   const uniforms = material.uniforms;
+  let fadeScale = treatment.fadeScale;
+  let previousFrom: Treatment | null = null;
+  let previousTo: Treatment | null = null;
+  let previousMix = -1;
+  function setTreatmentBlend(from: Treatment, to: Treatment, amount: number) {
+    const mix = Math.min(1, Math.max(0, amount));
+    if (from === previousFrom && to === previousTo && mix === previousMix) return;
+    previousFrom = from;
+    previousTo = to;
+    previousMix = mix;
+    const a = rampFor(from);
+    const b = rampFor(to);
+    if (mix === 0) bytes = a;
+    else if (mix === 1) bytes = b;
+    else {
+      // Only 1 KiB, using precomputed endpoints and a reusable buffer. Keep
+      // one vertex texture lookup; no per-frame Planckian ramp construction.
+      for (let i = 0; i < a.length; i++) blendedBytes[i] = Math.round(a[i] + (b[i] - a[i]) * mix);
+      bytes = blendedBytes;
+    }
+    ramp.image.data = bytes;
+    ramp.needsUpdate = true;
+    const lerp = (a: number, b: number) => a + (b - a) * mix;
+    uniforms.uMark.value = lerp(from.mark, to.mark);
+    uniforms.uSpread.value = lerp(from.spread, to.spread);
+    // Gain is exposure: interpolate in log space to avoid an enormous mid-
+    // transition flash while spread and the magnitude response are changing.
+    uniforms.uGain.value = mix === 0 ? from.gain : mix === 1 ? to.gain :
+      Math.exp(lerp(Math.log(from.gain), Math.log(to.gain)));
+    uniforms.uMagFloor.value = lerp(from.magFloor, to.magFloor);
+    uniforms.uMagGamma.value = lerp(from.magGamma, to.magGamma);
+    uniforms.uMagUnknown.value = lerp(from.magUnknown, to.magUnknown);
+    uniforms.uDashPeriod.value = lerp(from.dashPeriod, to.dashPeriod);
+    uniforms.uDashDuty.value = lerp(from.dashDuty, to.dashDuty);
+    (uniforms.uTail.value as Vector2).set(lerp(from.tail[0], to.tail[0]), lerp(from.tail[1], to.tail[1]));
+    fadeScale = lerp(from.fadeScale, to.fadeScale);
+  }
   return {
     material,
     /** Live ramp bytes, so the on-screen legend samples what the GPU has. */
     get ramp() { return bytes; },
+    prepareTreatments(treatments: readonly Treatment[]) {
+      treatments.forEach(rampFor);
+    },
+    setTreatmentBlend,
     setTreatment(next: Treatment) {
-      bytes = buildColourRamp({
-        domain: bpRpDomain, chroma: next.chroma, unmeasured: next.unmeasured,
-      });
-      ramp.image.data = bytes;
-      ramp.needsUpdate = true;
-      uniforms.uMark.value = next.mark;
-      uniforms.uSpread.value = next.spread;
-      uniforms.uGain.value = next.gain;
-      uniforms.uMagFloor.value = next.magFloor;
-      uniforms.uMagGamma.value = next.magGamma;
-      uniforms.uMagUnknown.value = next.magUnknown;
-      uniforms.uDashPeriod.value = next.dashPeriod;
-      uniforms.uDashDuty.value = next.dashDuty;
-      (uniforms.uTail.value as Vector2).set(next.tail[0], next.tail[1]);
+      setTreatmentBlend(next, next, 0);
     },
     setMorph(morph: number) {
       uniforms.uMorph.value = morph;
     },
-    setViewport(width: number, height: number, near: number) {
+    setViewport(width: number, height: number, near: number, pixelRatio = 1) {
       (uniforms.uViewport.value as Vector2).set(width, height);
       uniforms.uNear.value = near;
+      uniforms.uPixelRatio.value = pixelRatio;
     },
     /** Track the orbit radius so the falloff stays relative to the view. */
-    setViewDistance(parsecs: number, current: Treatment) {
+    setViewDistance(parsecs: number) {
       const { min, max } = FADE_REFERENCE_PC;
       uniforms.uFadeReference.value =
-        Math.min(max, Math.max(min, parsecs)) * current.fadeScale;
+        Math.min(max, Math.max(min, parsecs)) * fadeScale;
     },
     dispose() {
       material.dispose();

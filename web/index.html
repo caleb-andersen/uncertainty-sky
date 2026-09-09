@@ -8,13 +8,18 @@
   </head>
   <body>
     <canvas id="sky" aria-label="Gaia distance uncertainty. Drag to orbit Earth; scroll or pinch to change distance."></canvas>
+    <div id="flight-distance">
+      <span>Distance from Earth</span>
+      <output id="flight-distance-value" aria-live="off">1 pc</output>
+    </div>
+    <p id="subtitle" aria-live="polite"></p>
     <header>
       <h1>Uncertainty Sky</h1>
       <p>Gaia DR3 · distance uncertainty</p>
     </header>
     <aside id="readout" aria-label="View controls">
       <p class="label">Distance from Earth</p>
-      <output id="distance">1,000 pc</output>
+      <output id="distance" aria-live="off" aria-label="Camera distance from Earth">1,000 pc</output>
       <label for="radius">Orbit radius · logarithmic scale</label>
       <input id="radius" type="range" min="0" max="1" step="0.001" aria-label="Orbit radius on a logarithmic scale" />
       <div class="limits"><button id="near">1 pc</button><button id="far">20,000 pc</button></div>
@@ -36,6 +41,9 @@
       </fieldset>
       <p id="treatment-note"></p>
 
+      <button id="flight" disabled>Fly · F</button>
+      <p id="flight-note">F to start / restart · Esc to stop</p>
+
       <p id="performance">Waiting for catalogue</p>
     </aside>
     <section id="loading" role="status" aria-live="polite">
@@ -52,7 +60,7 @@
           <li><i class="swatch stippled"></i><span id="key-stippled">No BP−RP — stippled</span></li>
         </ul>
       </div>
-      <p>Drag to orbit · scroll / pinch to travel · Earth fixed at origin</p>
+      <p>Drag to orbit · scroll / pinch to travel · F to fly · Earth fixed at origin</p>
       <p id="disclosure">Each streak is one star's 1σ distance range along its line of
         sight. Only morph 1.000 draws the catalogue's bounds; below that the streak is a
         centred fraction of that range — a display transition, not a narrower measurement.
