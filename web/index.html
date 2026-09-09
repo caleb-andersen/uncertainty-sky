@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-treatment="plate">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#05070b" />
+    <meta name="theme-color" content="#0a0908" />
     <title>Uncertainty Sky</title>
   </head>
   <body>
@@ -18,6 +18,24 @@
       <label for="radius">Orbit radius · logarithmic scale</label>
       <input id="radius" type="range" min="0" max="1" step="0.001" aria-label="Orbit radius on a logarithmic scale" />
       <div class="limits"><button id="near">1 pc</button><button id="far">20,000 pc</button></div>
+
+      <hr />
+
+      <label for="morph">Uncertainty morph <output id="morph-value" for="morph">1.000</output></label>
+      <input id="morph" type="range" min="0" max="1" step="0.001" value="1" />
+      <div class="limits">
+        <button id="collapse">Points</button>
+        <button id="sweep" aria-pressed="false">Sweep</button>
+        <button id="expand">Bounds</button>
+      </div>
+
+      <hr />
+
+      <fieldset id="treatments">
+        <legend>Treatment</legend>
+      </fieldset>
+      <p id="treatment-note"></p>
+
       <p id="performance">Waiting for catalogue</p>
     </aside>
     <section id="loading" role="status" aria-live="polite">
@@ -25,10 +43,23 @@
       <progress id="progress" aria-label="Catalogue download progress"></progress>
     </section>
     <footer>
+      <div id="legend">
+        <div id="ramp" role="img" aria-label="Colour ramp: BP−RP from −0.5, blue-white, through white to +5.5, deep orange-red."></div>
+        <div id="ramp-ticks"></div>
+        <ul id="key">
+          <li><i class="swatch measured"></i><span id="key-measured">Far endpoint measured</span></li>
+          <li><i class="swatch clamped"></i><span id="key-clamped">Far endpoint clamped — dissolves</span></li>
+          <li><i class="swatch stippled"></i><span id="key-stippled">No BP−RP — stippled</span></li>
+        </ul>
+      </div>
       <p>Drag to orbit · scroll / pinch to travel · Earth fixed at origin</p>
-      <p>Uniform display intensity; colour and brightness are not encoded yet.
-        Capped and unbounded far endpoints are display limits, not measured distances;
-        they are not visually distinguished in this scaffold.</p>
+      <p id="disclosure">Each streak is one star's 1σ distance range along its line of
+        sight. Only morph 1.000 draws the catalogue's bounds; below that the streak is a
+        centred fraction of that range — a display transition, not a narrower measurement.
+        Colour is a blackbody ramp keyed to observed BP−RP, uncorrected for interstellar
+        reddening, so a reddened hot star reads cool. Intensity is a display response to G
+        magnitude, attenuated with distance from the camera and divided along the smear;
+        it is not photometry.</p>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

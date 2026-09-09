@@ -13,8 +13,15 @@ function fixture() {
       item_size: floats ? 3 : 1, count: 2, normalized: false,
     };
   }
-  return { stage: 'pack', byte_order: 'little-endian', stars: 1, vertices: 2,
-    bounding_radius_pc: 1, attributes };
+  return {
+    stage: 'pack', byte_order: 'little-endian', stars: 1, vertices: 2,
+    bounding_radius_pc: 1, attributes,
+    decode: {
+      color: { sentinel: 0, domain: [-0.5, 5.5] },
+      brightness: { sentinel: 0, domain: [2, 22], inverted: true },
+      unbounded: { codes: { 0: 'measured', 1: 'clamped', 2: 'unbounded' } },
+    },
+  };
 }
 
 test('five streams start concurrently, progress counts bytes, scalar codes stay raw', async (t) => {
@@ -42,8 +49,13 @@ test('five streams start concurrently, progress counts bytes, scalar codes stay 
   assert.ok(updates.every(([loaded], i) => i === 0 || loaded > updates[i - 1][0]));
   assert.equal(geometry.getAttribute('position').count, 2);
   assert.ok(geometry.getAttribute('position').array instanceof Float32Array);
-  assert.ok(geometry.getAttribute('color').array instanceof Uint8Array);
-  assert.equal(geometry.getAttribute('color').normalized, false);
+  // Renamed off the packer's key: `color` is a scalar bp_rp code, and Three.js
+  // reserves that attribute name for RGB vertex colours.
+  assert.equal(geometry.getAttribute('color'), undefined);
+  assert.ok(geometry.getAttribute('bpRpCode').array instanceof Uint8Array);
+  assert.equal(geometry.getAttribute('bpRpCode').normalized, false);
+  assert.equal(geometry.getAttribute('magCode').count, 2);
+  assert.equal(geometry.getAttribute('farFlag').count, 2);
   assert.equal(geometry.boundingSphere.radius, 1);
   geometry.dispose();
 });
@@ -71,4 +83,19 @@ test('Vite HTML fallback is reported as missing catalogue', async (t) => {
     headers: { 'content-type': 'text/html' },
   }));
   await assert.rejects(loadCatalogue(() => {}), /No \/data\/meta.json found/);
+});
+
+test('a manifest without usable decode rules fails before binary downloads', async (t) => {
+  const meta = fixture();
+  delete meta.decode.brightness.inverted;
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json(meta));
+  await assert.rejects(loadCatalogue(() => {}), /Unsupported catalogue decode rules/);
+  assert.equal(fetch.mock.callCount(), 1);
+});
+
+test('a missing-measurement sentinel that moved is rejected', async (t) => {
+  const meta = fixture();
+  meta.decode.color.sentinel = 255;
+  t.mock.method(globalThis, 'fetch', async () => Response.json(meta));
+  await assert.rejects(loadCatalogue(() => {}), /Unsupported catalogue decode rules/);
 });

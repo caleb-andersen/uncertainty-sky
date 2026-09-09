@@ -1,4 +1,25 @@
-:root { font-family: system-ui, sans-serif; color: #e1e6ef; background: #05070b; color-scheme: dark; }
+/* One palette per treatment, so the chrome shifts temperature with the sky
+   instead of sitting on top of it in a fixed blue. Every ground stays dark and
+   neutral; the streaks are meant to be the only saturated thing on screen. */
+:root {
+  --ground: #0a0908;
+  --ink: #e7e2da;
+  --dim: #9a948a;
+  --panel: #12100ee6;
+  --edge: #2f2a24;
+  --raised: #1d1913;
+  --accent: #d8c7a4;
+}
+html[data-treatment='graphite'] {
+  --ground: #0d1012; --ink: #dfe5ea; --dim: #8d99a5; --panel: #121a1fe6;
+  --edge: #26323b; --raised: #1a242b; --accent: #a6c1d3;
+}
+html[data-treatment='confidence'] {
+  --ground: #0b0b0c; --ink: #e9e9eb; --dim: #92929a; --panel: #141416e6;
+  --edge: #2b2b30; --raised: #1e1e22; --accent: #c8c8d2;
+}
+
+:root { font-family: system-ui, sans-serif; color: var(--ink); background: var(--ground); color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; overflow: hidden; }
 #sky { display: block; width: 100vw; height: 100vh; touch-action: none; }
@@ -6,22 +27,82 @@ header, aside, footer, #loading { position: fixed; }
 header { top: 24px; left: 28px; pointer-events: none; }
 h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: .06em; }
 p { margin: 8px 0; }
-header p, .label, label, footer, #performance { font-size: 12px; color: #9daabc; }
-#readout { top: 24px; right: 28px; width: 265px; padding: 16px; background: #080d16df; border: 1px solid #243043; border-radius: 8px; }
+header p, .label, label, legend, footer, #performance, #treatment-note { font-size: 12px; color: var(--dim); }
+#readout {
+  top: 24px; right: 28px; width: 268px; padding: 16px;
+  max-height: calc(100vh - 48px); overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
+}
 .label { margin-top: 0; }
 #distance { display: block; font-variant-numeric: tabular-nums; font-size: 28px; margin-bottom: 18px; }
 label { display: block; }
-input { width: 100%; margin: 12px 0; accent-color: #a9c6f3; }
-.limits { display: flex; justify-content: space-between; }
-button { color: #dce8fa; background: #172335; border: 1px solid #354a65; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
-button:hover { background: #253a55; }
-:focus-visible { outline: 2px solid #c1dcff; outline-offset: 3px; }
+input[type='range'] { width: 100%; margin: 12px 0; accent-color: var(--accent); }
+.limits { display: flex; justify-content: space-between; gap: 6px; }
+button {
+  color: var(--ink); background: var(--raised); border: 1px solid var(--edge);
+  padding: 6px 10px; border-radius: 4px; cursor: pointer; font: inherit; font-size: 12px;
+}
+button:hover { border-color: var(--accent); }
+button[aria-pressed='true'] { color: var(--ground); background: var(--accent); border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+hr { border: 0; border-top: 1px solid var(--edge); margin: 18px 0 14px; }
+
+#morph-value { float: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* Treatment picker: radios kept for keyboard and screen readers, drawn as a
+   segmented control. */
+#treatments { border: 0; margin: 0; padding: 0; }
+#treatments legend { padding: 0; margin-bottom: 8px; }
+#treatments div { display: flex; border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; }
+#treatments input { position: absolute; opacity: 0; pointer-events: none; }
+#treatments label {
+  flex: 1; text-align: center; padding: 6px 4px; cursor: pointer;
+  font-size: 12px; color: var(--dim); background: var(--raised);
+  border-left: 1px solid var(--edge);
+}
+#treatments label:first-of-type { border-left: 0; }
+#treatments input:checked + label { color: var(--ground); background: var(--accent); }
+#treatments input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+#treatment-note { line-height: 1.5; }
+
 #performance { margin-bottom: 0; line-height: 1.6; font-variant-numeric: tabular-nums; }
-#loading { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, 85vw); padding: 20px; background: #0b121fee; border: 1px solid #354a65; border-radius: 8px; font-size: 14px; }
-progress { width: 100%; accent-color: #a9c6f3; }
-footer { left: 28px; bottom: 18px; max-width: 680px; padding-right: 28px; pointer-events: none; line-height: 1.5; }
+#loading {
+  top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, 85vw);
+  padding: 20px; background: var(--panel); border: 1px solid var(--edge);
+  border-radius: 8px; font-size: 14px;
+}
+progress { width: 100%; accent-color: var(--accent); }
+/* The Galactic plane lands squarely behind this corner, so the notes need a
+   ground of their own rather than a text shadow over moving streaks. */
+footer {
+  left: 28px; bottom: 18px; width: min(600px, calc(100vw - 56px)); padding: 12px 14px;
+  pointer-events: none; line-height: 1.5;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
+}
+footer p:last-child { margin-bottom: 0; }
+
+#ramp { height: 8px; border-radius: 2px; border: 1px solid var(--edge); }
+#ramp-ticks { position: relative; height: 15px; margin-bottom: 10px; font-size: 11px; color: var(--dim); }
+#ramp-ticks span { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
+#ramp-ticks span::before {
+  content: ''; position: absolute; top: -4px; left: 50%; width: 1px; height: 3px;
+  background: var(--dim);
+}
+#ramp-ticks span.start { transform: none; }
+#ramp-ticks span.start::before { left: 0; }
+#ramp-ticks span.end { transform: translateX(-100%); }
+#ramp-ticks span.end::before { left: auto; right: 0; }
+
+#key { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0 0 10px; padding: 0; list-style: none; font-size: 11px; color: var(--dim); }
+#key li { display: flex; align-items: center; gap: 7px; }
+.swatch { width: 34px; height: 2px; flex: none; }
+.swatch.measured { background: var(--ink); }
+.swatch.clamped { background: linear-gradient(to right, var(--ink), transparent); }
+.swatch.stippled { background: repeating-linear-gradient(to right, var(--ink) 0 3px, transparent 3px 6px); }
+
 @media (max-width: 600px) {
   header { top: 16px; left: 16px; }
-  #readout { top: 85px; right: 16px; width: 225px; }
+  #readout { top: 78px; right: 16px; width: 232px; max-height: calc(100vh - 96px); }
   footer { left: 16px; bottom: 8px; font-size: 11px; }
+  #legend { display: none; }
 }
