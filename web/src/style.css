@@ -24,42 +24,31 @@ html[data-treatment='confidence'] {
 body { margin: 0; overflow: hidden; }
 body.flight-playing > :not(#sky) { visibility: hidden; }
 
-/* The flight is a film: one small distance counter in the top-right corner,
-   subtitles bottom-centre, and nothing else. Both sit directly on the sky
-   with a shadow; the top-right stays dark for the whole flight, and subtitles
-   are short enough to survive the plane. Fades come from film time, so a
-   recording that drops below the frame rate keeps them locked to the cut. */
-#flight-distance, #subtitle {
-  display: none; pointer-events: none; color: #f2eee8;
-  text-shadow: 0 1px 3px #000, 0 0 8px #000, 0 0 20px #000c;
-}
-body.flight-playing #flight-distance, body.flight-playing #subtitle { display: block; visibility: visible; }
-#flight-distance { top: 28px; right: 32px; text-align: right; }
-#flight-distance span {
-  display: block; margin-bottom: 5px; font-size: 10px; letter-spacing: .18em;
-  text-transform: uppercase; color: #b8b2a9;
-}
-#flight-distance output { display: block; font-size: 20px; font-weight: 300; font-variant-numeric: tabular-nums; }
-#subtitle {
-  left: 50%; bottom: 8vh; transform: translateX(-50%); width: min(72vw, 760px);
-  margin: 0; text-align: center; font-size: 28px; line-height: 1.35;
-  text-wrap: balance; opacity: var(--fade, 0);
+/* The flight is a film: a distance counter and subtitles, and nothing else.
+   Both are painted on this canvas by src/overlay.ts, which the video export
+   runs over the same rendered frame, so the screen and the file agree. The
+   page keeps a silent copy of the subtitle for assistive technology. */
+#overlay { display: none; inset: 0; width: 100vw; height: 100vh; pointer-events: none; }
+body.flight-playing #overlay { display: block; visibility: visible; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
 body.flight-playing, body.flight-playing #sky { cursor: none; }
 button:disabled { opacity: 0.5; cursor: wait; }
 #flight-note { font-size: 12px; color: var(--dim); }
 #sky { display: block; width: 100vw; height: 100vh; touch-action: none; }
-header, aside, footer, #loading, #flight-distance, #subtitle { position: fixed; }
+header, aside, footer, #loading, #overlay { position: fixed; }
 header { top: 24px; left: 28px; pointer-events: none; }
 h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: .06em; }
 p { margin: 8px 0; }
-header p, .label, label, legend, footer, #performance, #treatment-note { font-size: 12px; color: var(--dim); }
+header p, .label, label, legend, footer, #performance,
+#gestures, #morph-note, #treatment-note { font-size: 12px; color: var(--dim); }
 #readout {
   top: 24px; right: 28px; width: 268px; padding: 16px;
   max-height: calc(100vh - 48px); overflow-y: auto;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
 }
-.label { margin-top: 0; }
 #distance { display: block; font-variant-numeric: tabular-nums; font-size: 28px; margin-bottom: 18px; }
 label { display: block; }
 input[type='range'] { width: 100%; margin: 12px 0; accent-color: var(--accent); }
@@ -73,7 +62,30 @@ button[aria-pressed='true'] { color: var(--ground); background: var(--accent); b
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 hr { border: 0; border-top: 1px solid var(--edge); margin: 18px 0 14px; }
 
+/* Both panels fold to their head, so the sky can have the whole frame back.
+   The head is the whole button rather than just the chevron: on a phone a
+   10px glyph is not a target, and the card's own title is already there. */
+.card-head {
+  display: flex; width: 100%; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 6px; padding: 0; background: none; border: 0;
+  color: var(--dim); font: inherit; text-align: left; cursor: pointer;
+  pointer-events: auto; /* The footer is inert; its head still has to be tappable. */
+}
+.card-head:hover { color: var(--ink); }
+.card-head svg {
+  flex: none; width: 10px; height: 6px; fill: none;
+  stroke: currentColor; stroke-width: 1.5; stroke-linecap: round;
+}
+[data-open='false'] .card-head svg { transform: rotate(180deg); }
+/* Folded, a card shrinks to its head rather than holding its open width, and
+   the readout keeps its live number: that is the instrument, not chrome. */
+#readout[data-open='false'], footer[data-open='false'] { width: auto; }
+#readout[data-open='false'] #distance { margin-bottom: 0; }
+
 #morph-value { float: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+/* The three standing notes in the panel: how to move the camera, what the morph
+   slider is doing to the geometry, and what the treatment changes. */
+#gestures, #morph-note, #treatment-note { line-height: 1.5; }
 
 /* Treatment picker: radios kept for keyboard and screen readers, drawn as a
    segmented control. */
@@ -89,7 +101,6 @@ hr { border: 0; border-top: 1px solid var(--edge); margin: 18px 0 14px; }
 #treatments label:first-of-type { border-left: 0; }
 #treatments input:checked + label { color: var(--ground); background: var(--accent); }
 #treatments input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
-#treatment-note { line-height: 1.5; }
 
 #performance { margin-bottom: 0; line-height: 1.6; font-variant-numeric: tabular-nums; }
 #loading {
@@ -105,7 +116,12 @@ footer {
   pointer-events: none; line-height: 1.5;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
 }
-footer p:last-child { margin-bottom: 0; }
+footer > :last-child { margin-bottom: 0; }
+/* The footer is inert so it never eats a drag; the disclosure's toggle and the
+   card head are the things in it meant to be clicked. */
+#notes { pointer-events: auto; }
+#notes summary { cursor: pointer; }
+#notes p { margin: 8px 0 0; }
 
 #ramp { height: 8px; border-radius: 2px; border: 1px solid var(--edge); }
 #ramp-ticks { position: relative; height: 15px; margin-bottom: 10px; font-size: 11px; color: var(--dim); }
@@ -126,12 +142,31 @@ footer p:last-child { margin-bottom: 0; }
 .swatch.clamped { background: linear-gradient(to right, var(--ink), transparent); }
 .swatch.stippled { background: repeating-linear-gradient(to right, var(--ink) 0 3px, transparent 3px 6px); }
 
+/* A phone has room for the sky or for the panels, not both. So both start
+   folded into chips in the bottom corners, main.ts opens only one at a time,
+   and the one that is open becomes a sheet across the foot of the screen. The
+   top of the frame, where the picture is, is never covered. */
 @media (max-width: 600px) {
   header { top: 16px; left: 16px; }
-  #readout { top: 78px; right: 16px; width: 232px; max-height: calc(100vh - 96px); }
-  footer { left: 16px; bottom: 8px; font-size: 11px; }
-  #legend { display: none; }
-  #flight-distance { top: 16px; right: 16px; }
-  #flight-distance output { font-size: 16px; }
-  #subtitle { bottom: 6vh; width: 88vw; font-size: 18px; }
+  #readout, footer {
+    top: auto; bottom: 8px; width: auto; max-height: 70vh; overflow-y: auto;
+    padding: 10px 12px; font-size: 11px;
+  }
+  #readout { right: 8px; left: auto; }
+  footer { left: 8px; right: auto; }
+  /* Folded, the readout is its live number and the chevron on one line, so the
+     two chips are the same height and the open sheet can dock above them. The
+     card that is open is a sheet; the other stays reachable as its chip. */
+  #readout[data-open='false'] {
+    display: flex; flex-direction: row-reverse; align-items: center; gap: 10px;
+  }
+  #readout[data-open='false'] .card-head { width: auto; margin: 0; }
+  #readout[data-open='false'] .label { display: none; }
+  #readout[data-open='false'] #distance { font-size: 16px; margin: 0; }
+  #readout[data-open='true'], footer[data-open='true'] {
+    left: 8px; right: 8px; bottom: 56px; z-index: 2; pointer-events: auto;
+  }
+  #distance { font-size: 22px; margin-bottom: 12px; }
+  /* The two ends are what the ramp is read against; three labels collide here. */
+  #ramp-ticks span:not(.start):not(.end) { display: none; }
 }

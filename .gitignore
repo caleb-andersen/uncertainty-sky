@@ -157,3 +157,25 @@ $RECYCLE.BIN/
 
 # ─── Claude Code ───────────────────────────────────────────────────────────
 .claude/settings.local.json
+
+# Rendered video exports
+web/exports/
+
+# ─── Third-party audio ─────────────────────────────────────────────────────
+# Soundtrack beds are licensed separately and are never redistributed under
+# this repo's MIT grant. See NOTICE.
+/web/music/
+*.mp3
+*.wav
+*.aac
+*.m4a
+*.flac
+*.ogg
+*.opus
+
+# ─── The film (stage 7) ────────────────────────────────────────────────────
+# src/score.ts is the authored flight: waypoints, cut points and narration.
+# The renderer is MIT, the score is not. scripts/score.mjs copies
+# src/score.example.ts into place when this file is absent. See NOTICE.
+/web/src/score.ts
+/web/tests/score.test.mjs

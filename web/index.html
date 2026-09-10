@@ -8,49 +8,60 @@
   </head>
   <body>
     <canvas id="sky" aria-label="Gaia distance uncertainty. Drag to orbit Earth; scroll or pinch to change distance."></canvas>
-    <div id="flight-distance">
-      <span>Distance from Earth</span>
-      <output id="flight-distance-value" aria-live="off">1 pc</output>
-    </div>
-    <p id="subtitle" aria-live="polite"></p>
+    <canvas id="overlay" aria-hidden="true"></canvas>
+    <p id="subtitle-live" class="sr-only" aria-live="polite"></p>
     <header>
       <h1>Uncertainty Sky</h1>
       <p>Gaia DR3 · distance uncertainty</p>
     </header>
-    <aside id="readout" aria-label="View controls">
-      <p class="label">Distance from Earth</p>
+    <aside id="readout" aria-label="View controls" data-open="true">
+      <button class="card-head" type="button" aria-label="Controls"
+        aria-expanded="true" aria-controls="readout-body">
+        <span class="label">Distance from Earth</span>
+        <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 5l4-4 4 4" /></svg>
+      </button>
       <output id="distance" aria-live="off" aria-label="Camera distance from Earth">1,000 pc</output>
-      <label for="radius">Orbit radius · logarithmic scale</label>
-      <input id="radius" type="range" min="0" max="1" step="0.001" aria-label="Orbit radius on a logarithmic scale" />
-      <div class="limits"><button id="near">1 pc</button><button id="far">20,000 pc</button></div>
+      <div id="readout-body">
+        <p id="gestures">Drag to orbit · scroll or pinch to travel · Earth fixed at origin</p>
+        <label for="radius">Orbit radius · logarithmic scale</label>
+        <input id="radius" type="range" min="0" max="1" step="0.001" aria-label="Orbit radius on a logarithmic scale" />
+        <div class="limits"><button id="near">1 pc</button><button id="far">20,000 pc</button></div>
 
-      <hr />
+        <hr />
 
-      <label for="morph">Uncertainty morph <output id="morph-value" for="morph">1.000</output></label>
-      <input id="morph" type="range" min="0" max="1" step="0.001" value="1" />
-      <div class="limits">
-        <button id="collapse">Points</button>
-        <button id="sweep" aria-pressed="false">Sweep</button>
-        <button id="expand">Bounds</button>
+        <label for="morph">Uncertainty morph <output id="morph-value" for="morph">1.000</output></label>
+        <input id="morph" type="range" min="0" max="1" step="0.001" value="1" />
+        <div class="limits">
+          <button id="collapse">Points</button>
+          <button id="sweep" aria-pressed="false">Sweep</button>
+          <button id="expand">Bounds</button>
+        </div>
+        <p id="morph-note" hidden>Below full bounds each streak is a centred fraction of its
+          measured range — a display transition, not a narrower measurement.</p>
+
+        <hr />
+
+        <fieldset id="treatments">
+          <legend>Treatment</legend>
+        </fieldset>
+        <p id="treatment-note"></p>
+
+        <button id="flight" disabled>Fly · F</button>
+        <p id="flight-note">F to start / restart · Esc to stop</p>
+
+        <p id="performance">Waiting for catalogue</p>
       </div>
-
-      <hr />
-
-      <fieldset id="treatments">
-        <legend>Treatment</legend>
-      </fieldset>
-      <p id="treatment-note"></p>
-
-      <button id="flight" disabled>Fly · F</button>
-      <p id="flight-note">F to start / restart · Esc to stop</p>
-
-      <p id="performance">Waiting for catalogue</p>
     </aside>
     <section id="loading" role="status" aria-live="polite">
       <p id="loading-text">Reading catalogue manifest…</p>
       <progress id="progress" aria-label="Catalogue download progress"></progress>
     </section>
-    <footer>
+    <footer data-open="true">
+      <button class="card-head" type="button"
+        aria-expanded="true" aria-controls="legend">
+        <span class="label">Legend</span>
+        <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 5l4-4 4 4" /></svg>
+      </button>
       <div id="legend">
         <div id="ramp" role="img" aria-label="Colour ramp: BP−RP from −0.5, blue-white, through white to +5.5, deep orange-red."></div>
         <div id="ramp-ticks"></div>
@@ -59,15 +70,17 @@
           <li><i class="swatch clamped"></i><span id="key-clamped">Far endpoint clamped — dissolves</span></li>
           <li><i class="swatch stippled"></i><span id="key-stippled">No BP−RP — stippled</span></li>
         </ul>
+        <p id="disclosure">Each streak is one star's 1σ distance range along its line of
+          sight. The geometry is measured; the colour and brightness are display responses
+          to BP−RP and G magnitude.</p>
+        <details id="notes">
+          <summary>How colour and brightness are drawn</summary>
+          <p>Colour is a blackbody ramp keyed to observed BP−RP, uncorrected for interstellar
+            reddening, so a reddened hot star reads cool. Intensity is a display response to G
+            magnitude, attenuated with distance from the camera and divided along the smear;
+            it is not photometry.</p>
+        </details>
       </div>
-      <p>Drag to orbit · scroll / pinch to travel · F to fly · Earth fixed at origin</p>
-      <p id="disclosure">Each streak is one star's 1σ distance range along its line of
-        sight. Only morph 1.000 draws the catalogue's bounds; below that the streak is a
-        centred fraction of that range — a display transition, not a narrower measurement.
-        Colour is a blackbody ramp keyed to observed BP−RP, uncorrected for interstellar
-        reddening, so a reddened hot star reads cool. Intensity is a display response to G
-        magnitude, attenuated with distance from the camera and divided along the smear;
-        it is not photometry.</p>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

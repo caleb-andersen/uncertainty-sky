@@ -3,8 +3,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadCatalogue } from './catalogue';
 import {
   createFlightPath, FlightClock, flightLookOffset, flightMorph, flightSubtitleAt,
-  flightTreatmentMix, FLIGHT_SECONDS, RECORD_FPS, RECORD_PIXEL_RATIO,
+  flightDip, flightTreatmentMix, FLIGHT_SECONDS, RECORD_FPS, RECORD_PIXEL_RATIO,
 } from './flight';
+import { drawOverlay } from './overlay';
 import { rampGradient, temperatureForBpRp } from './palette';
 import { createStarMaterial } from './starMaterial';
 import { DEFAULT_TREATMENT, TREATMENTS } from './treatments';
@@ -19,6 +20,7 @@ const distance = document.querySelector<HTMLOutputElement>('#distance')!;
 const radius = document.querySelector<HTMLInputElement>('#radius')!;
 const morphInput = document.querySelector<HTMLInputElement>('#morph')!;
 const morphValue = document.querySelector<HTMLOutputElement>('#morph-value')!;
+const morphNote = document.querySelector<HTMLElement>('#morph-note')!;
 const sweepButton = document.querySelector<HTMLButtonElement>('#sweep')!;
 const treatments = document.querySelector<HTMLFieldSetElement>('#treatments')!;
 const treatmentNote = document.querySelector<HTMLElement>('#treatment-note')!;
@@ -30,7 +32,16 @@ const loadingText = document.querySelector<HTMLElement>('#loading-text')!;
 const progress = document.querySelector<HTMLProgressElement>('#progress')!;
 const flightButton = document.querySelector<HTMLButtonElement>('#flight')!;
 flightButton.textContent = `Fly · F · ${FLIGHT_SECONDS} seconds`;
-const recording = new URLSearchParams(window.location.search).has('record');
+const params = new URLSearchParams(window.location.search);
+const recording = params.has('record');
+// Export renders the film frame by frame and posts each to scripts/export.mjs.
+// It never uses the wall clock, so the result does not depend on this machine.
+const exporting = params.has('export');
+const exportSize = {
+  width: Math.round(Number(params.get('w')) || 1920),
+  height: Math.round(Number(params.get('h')) || 1080),
+  seconds: Math.min(Number(params.get('s')) || FLIGHT_SECONDS, FLIGHT_SECONDS),
+};
 if (recording) document.querySelector('#flight-note')!.textContent =
   `Recording · ${RECORD_FPS} fps · ${RECORD_PIXEL_RATIO}× sampling · F to restart · Esc to exit`;
 const format = new Intl.NumberFormat('en', { maximumFractionDigits: 1 });
@@ -38,6 +49,7 @@ const nearFormat = new Intl.NumberFormat('en', { minimumFractionDigits: 2, maxim
 const kelvin = new Intl.NumberFormat('en', { maximumFractionDigits: 0 });
 const PLATE = TREATMENTS.find((value) => value.id === 'plate')!;
 const CONFIDENCE = TREATMENTS.find((value) => value.id === 'confidence')!;
+/** The page's own readout. The film draws its own counter, in both units. */
 const formatDistance = (pc: number) => `${(pc < 10 ? nearFormat : format).format(pc)} pc`;
 const query = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 
@@ -85,26 +97,68 @@ function buildRampTicks([low, high]: readonly [number, number]) {
 }
 
 /**
- * The film's overlay: the camera's distance from Earth, and a subtitle. Text
- * is written only when it changes; the fade is written every frame, since it
- * comes from film time rather than from a CSS transition.
+ * The live overlay: the same painting routine the export uses, on a canvas
+ * over the sky, plus a silent copy of the subtitle for assistive technology.
  */
 function createOverlay() {
-  const distanceValue = query<HTMLOutputElement>('#flight-distance-value');
-  const subtitle = query('#subtitle');
-  let shown = '';
+  const element = query<HTMLCanvasElement>('#overlay');
+  const ctx = element.getContext('2d')!;
+  const live = query('#subtitle-live');
+  let spoken = '';
   return {
+    resize(pixelRatio: number) {
+      element.width = Math.round(window.innerWidth * pixelRatio);
+      element.height = Math.round(window.innerHeight * pixelRatio);
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    },
     update(seconds: number, pc: number) {
-      distanceValue.value = formatDistance(pc);
       const cue = flightSubtitleAt(seconds);
-      if (cue.text !== shown) {
-        shown = cue.text;
-        subtitle.textContent = cue.text;
+      // This canvas is the overlay's own surface, so it clears it itself.
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      drawOverlay(ctx, window.innerWidth, window.innerHeight, cue, pc, flightDip(seconds));
+      if (cue.text !== spoken) {
+        spoken = cue.text;
+        live.textContent = cue.text;
       }
-      subtitle.style.setProperty('--fade', cue.opacity.toFixed(4));
+    },
+    clear() {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      spoken = '';
+      live.textContent = '';
     },
   };
 }
+
+/**
+ * The two cards fold to their heads. A phone has room for the sky or for the
+ * panels, not both, so there both start folded and opening one folds the
+ * other; a desktop has room for both and opens both.
+ *
+ * The default is read once, at load. After that the fold is the viewer's, and
+ * a rotation is not a reason to overrule them.
+ */
+const NARROW = window.matchMedia('(max-width: 600px)');
+
+function setCardOpen(card: HTMLElement, open: boolean) {
+  const head = card.querySelector<HTMLButtonElement>('.card-head')!;
+  card.dataset.open = String(open);
+  head.setAttribute('aria-expanded', String(open));
+  query(`#${head.getAttribute('aria-controls')}`).hidden = !open;
+}
+
+function setupCards() {
+  const cards = [...document.querySelectorAll<HTMLElement>('[data-open]')];
+  for (const card of cards) {
+    card.querySelector<HTMLButtonElement>('.card-head')!.addEventListener('click', () => {
+      const open = card.dataset.open !== 'true';
+      setCardOpen(card, open);
+      if (!open || !NARROW.matches) return;
+      for (const other of cards) if (other !== card) setCardOpen(other, false);
+    });
+    setCardOpen(card, !NARROW.matches);
+  }
+}
+setupCards();
 
 /** Counts come from the packer's own summary; with no summary, no percentage. */
 function labelKey(id: string, text: string, count: number | undefined, stars: number) {
@@ -116,6 +170,9 @@ async function start() {
   const renderer = new THREE.WebGLRenderer({
     canvas, logarithmicDepthBuffer: true, antialias: false,
     powerPreference: 'high-performance',
+    // The export composites the rendered frame into a 2D canvas; without this
+    // the buffer may already be gone by the time it is read.
+    preserveDrawingBuffer: exporting,
   });
   // Interactive mode stays cheap. Recording spends 4× the pixels on thin lines.
   renderer.setPixelRatio(recording ? RECORD_PIXEL_RATIO : 1);
@@ -166,6 +223,10 @@ async function start() {
     morphInput.value = String(morph);
     morphValue.textContent = morph.toFixed(3);
     morphInput.setAttribute('aria-valuetext', `${morph.toFixed(3)} of the measured bounds`);
+    // The caveat about a centred fraction is only true off the bound, so it is only
+    // shown there. A warning about a state the viewer is not in is one they learn
+    // to skip, and this one has to still be read at 0.999.
+    morphNote.hidden = morph >= 1;
     field?.setMorph(morph);
   }
 
@@ -175,10 +236,26 @@ async function start() {
     if (active) sweepPhase = unease(morph);
   }
 
+  /** Places the whole film at one time. Returns the camera's distance. */
+  function applyFlightFrame(seconds: number): number {
+    flightPath.positionAt(seconds, camera.position);
+    camera.lookAt(flightPath.targetAt(seconds, flightTarget));
+    camera.rotateY(flightLookOffset(seconds));
+    morph = flightMorph(seconds);
+    field?.setMorph(morph);
+    const mix = flightTreatmentMix(seconds);
+    field?.setTreatmentBlend(PLATE, CONFIDENCE, mix);
+    renderer.setClearColor(flightGround.copy(plateGround).lerp(confidenceGround, mix));
+    const parsecs = camera.position.length();
+    field?.setViewDistance(parsecs);
+    return parsecs;
+  }
+
   function stopFlight(completed = holdingFlight) {
     flight = null;
     holdingFlight = false;
     document.body.classList.remove('flight-playing');
+    overlay.clear();
     controls.enabled = true;
     controls.update();
     if (savedTreatment) applyTreatment(completed ? CONFIDENCE : savedTreatment);
@@ -270,6 +347,12 @@ async function start() {
     camera.updateProjectionMatrix();
     renderer.getDrawingBufferSize(buffer);
     field?.setViewport(buffer.x, buffer.y, camera.near, renderer.getPixelRatio());
+    // The sky's pixel ratio is a performance choice; the overlay's is not. A
+    // dozen glyphs cost nothing to draw at the display's own resolution, and
+    // below it the type is visibly resampled by the browser. Recording's 2x
+    // stands where it is the higher of the two, so a capture keeps its
+    // supersampled text.
+    overlay.resize(Math.max(window.devicePixelRatio, renderer.getPixelRatio()));
     if (holdingFlight) renderer.render(scene, camera);
   }
   window.addEventListener('resize', resize);
@@ -288,25 +371,20 @@ async function start() {
     if (flight) {
       const seconds = flight.sample(now);
       if (seconds === null) return;
-      flightPath.positionAt(seconds, camera.position);
-      camera.lookAt(flightPath.targetAt(seconds, flightTarget));
-      camera.rotateY(flightLookOffset(seconds));
-      morph = flightMorph(seconds);
-      field?.setMorph(morph);
-      const mix = flightTreatmentMix(seconds);
-      field?.setTreatmentBlend(PLATE, CONFIDENCE, mix);
-      renderer.setClearColor(flightGround.copy(plateGround).lerp(confidenceGround, mix));
+      const parsecs = applyFlightFrame(seconds);
       updateReadout();
-      overlay.update(seconds, camera.position.length());
+      overlay.update(seconds, parsecs);
       flightFinished = seconds === FLIGHT_SECONDS;
     } else if (sweeping) {
       sweepPhase = (sweepPhase + delta / SWEEP_SECONDS) % 2;
       applyMorph(ease(sweepPhase <= 1 ? sweepPhase : 2 - sweepPhase));
     }
-    if (!flight) controls.update();
-    // The distance falloff is relative to the orbit radius, so it has to track
-    // the camera rather than being set once.
-    field?.setViewDistance(camera.position.length());
+    if (!flight) {
+      controls.update();
+      // The distance falloff is relative to the orbit radius, so it has to
+      // track the camera rather than being set once.
+      field?.setViewDistance(camera.position.length());
+    }
     renderer.render(scene, camera);
     if (flightFinished) {
       if (recording) {
@@ -371,6 +449,69 @@ async function start() {
   labelKey('#key-clamped', 'Far endpoint clamped, dissolves',
     counts && counts.far_clamped + counts.far_unbounded, meta.stars);
   labelKey('#key-stippled', 'No BP−RP, stippled', counts?.bp_rp_missing, meta.stars);
+
+  /**
+   * Render the film frame by frame and post each one to the export script.
+   *
+   * Nothing here reads a clock. Frame n is film second n / RECORD_FPS, so the
+   * result is identical on any machine and cannot drop or duplicate a frame;
+   * a slow machine only makes the export take longer. The sky is drawn at
+   * RECORD_PIXEL_RATIO and downsampled into the film canvas, which is the
+   * same supersampling the on-screen recording mode uses.
+   */
+  async function exportFilm() {
+    const { width, height, seconds: filmSeconds } = exportSize;
+    renderer.setAnimationLoop(null);
+    controls.enabled = false;
+    applyTreatment(PLATE);
+    renderer.setPixelRatio(RECORD_PIXEL_RATIO);
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.getDrawingBufferSize(buffer);
+    field?.setViewport(buffer.x, buffer.y, camera.near, renderer.getPixelRatio());
+    const film = document.createElement('canvas');
+    film.width = width;
+    film.height = height;
+    const ctx = film.getContext('2d')!;
+    const total = Math.round(filmSeconds * RECORD_FPS);
+    loading.hidden = false;
+    progress.hidden = false;
+    progress.max = total;
+    for (let frame = 0; frame < total; frame++) {
+      const seconds = frame / RECORD_FPS;
+      const parsecs = applyFlightFrame(seconds);
+      renderer.render(scene, camera);
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(canvas, 0, 0, width, height);
+      drawOverlay(ctx, width, height,
+        flightSubtitleAt(seconds), parsecs, flightDip(seconds));
+      const blob = await new Promise<Blob | null>((resolve) => film.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error(`Frame ${frame} failed to encode`);
+      // Awaiting each frame is the backpressure: the script only answers once
+      // the bytes are in the encoder, so frames arrive in order and in step.
+      const response = await fetch(`/frame/${frame}`, { method: 'POST', body: blob });
+      if (!response.ok) throw new Error(`Frame ${frame}: ${await response.text()}`);
+      progress.value = frame + 1;
+      loadingText.textContent =
+        `Exporting ${width} × ${height} · frame ${frame + 1} of ${total} · ` +
+        `${((frame + 1) / total * 100).toFixed(1)}%`;
+    }
+    await fetch('/done', { method: 'POST' });
+    progress.hidden = true;
+    loadingText.textContent = 'Export complete. The script is finishing the file; this tab can be closed.';
+  }
+
+  if (exporting) {
+    stars = meta.stars;
+    await exportFilm().catch(async (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      loadingText.textContent = `Export failed: ${message}`;
+      await fetch('/error', { method: 'POST', body: message }).catch(() => {});
+      throw error;
+    });
+    return;
+  }
 
   // Present the loading message before the initial GPU upload.
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));

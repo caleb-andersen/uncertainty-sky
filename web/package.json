@@ -4,9 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/score.mjs",
     "dev": "node scripts/vite.mjs --host 127.0.0.1",
+    "prebuild": "node scripts/score.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "node scripts/vite.mjs preview --host 127.0.0.1",
+    "export": "npm run build && node --experimental-strip-types scripts/export.mjs",
+    "pretest": "node scripts/score.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {

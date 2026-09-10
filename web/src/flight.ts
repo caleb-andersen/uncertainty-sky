@@ -1,49 +1,93 @@
+/**
+ * The projector: everything needed to play a film score, and none of the score.
+ *
+ * `src/score.ts` holds the authored flight - waypoints, cut points, cards. This
+ * module holds only the machinery that reads one: the easing, the spline
+ * inversion that gives each distance decade equal time, the subtitle fader, and
+ * the frame-indexed recording clock. Swap the score and this file is unchanged.
+ *
+ * The split is licensing as much as structure. The machinery is MIT; a score is
+ * not. See NOTICE.
+ *
+ * Nothing here modifies catalogue positions or errors. A flight moves the
+ * camera and nothing else.
+ */
 import { CatmullRomCurve3, MathUtils, Vector3 } from 'three';
+import { SCORE } from './score.ts';
+import type { FlightScore, Vec, Waypoint } from './scoreTypes.ts';
 
-export const FLIGHT_SECONDS = 78;
+/** Delivery format, not authorship: these stay with the projector. */
 export const RECORD_FPS = 60;
 export const RECORD_PIXEL_RATIO = 2;
 
-// Chapter boundaries double as edit points; every sample is a pure function
-// of film time, so replaying or recording never depends on the previous take.
-export const FLIGHT_CHAPTERS = [
-  { start: 0, end: 10, label: 'Local field' },
-  { start: 10, end: 36, label: 'Distance decades' },
-  { start: 36, end: 42, label: 'Points and bounds · 2,000 pc' },
-  { start: 42, end: 54, label: 'Across the sheaf' },
-  { start: 54, end: 64, label: 'Outward' },
-  { start: 64, end: 70, label: 'Plate to Confidence' },
-  { start: 70, end: 74.6, label: 'Points and bounds · 15,000 pc' },
-  { start: 74.6, end: FLIGHT_SECONDS, label: 'Measured bounds' },
-] as const;
-
-/** Seconds a subtitle takes to fade in, and to fade out before it clears. */
-export const SUBTITLE_FADE = 0.35;
+/** Seconds of smooth acceleration at either end of an outward leg. */
+const RAMP = 2;
 
 /**
- * Subtitles, timed to the shots. Each line says only what the frame is showing
- * at that moment: nothing is claimed for the sky that the renderer is not
- * drawing from the catalogue. Cues never overlap and leave a gap for the fade.
+ * A score is checked once, on load, and rejected loudly rather than played
+ * wrong. A leg that does not end on a cut would put a camera discontinuity
+ * inside a shot, where no dip is covering it.
  */
+function verify(score: FlightScore): FlightScore {
+  const { shots, duration, cuts } = score;
+  if (!shots.length || shots[0].start !== 0 || shots.at(-1)!.end !== duration) {
+    throw new Error('Score shots must cover the flight from 0 to its duration');
+  }
+  shots.slice(1).forEach((shot, i) => {
+    if (shot.start !== shots[i].end) throw new Error(`Score has a gap at ${shot.start}s`);
+  });
+  const edges = new Set<number>(shots.map((shot) => shot.start));
+  for (const [leg, at] of Object.entries(cuts)) {
+    if (!edges.has(at)) throw new Error(`Score cut "${leg}" at ${at}s is not a shot boundary`);
+  }
+  return score;
+}
+
+const score = verify(SCORE);
+
+export const PROLOGUE_SECONDS = score.prologue.seconds;
+export const PROLOGUE_EXPAND = score.prologue.expand;
+export const DIP = score.dip;
+export const FLIGHT_DURATION = score.duration;
+export const FLIGHT_SECONDS = PROLOGUE_SECONDS + FLIGHT_DURATION;
+export const SUBTITLE_FADE = score.subtitleFade;
+
+/**
+ * Where each leg of the flight ends, in flight time. Exported so a test can
+ * address a leg without knowing the score's numbers: the values come from the
+ * score at run time and are not written down here.
+ */
+export const FLIGHT_CUTS = score.cuts;
+
+/** Where each comparison starts, in flight time, and how long its points hold. */
+export const POINTS_HOLD: Record<number, number> = Object.fromEntries(
+  score.comparisons.at.map(({ start, hold }) => [start, hold]));
+
+// Chapter boundaries double as edit points; every sample is a pure function of
+// film time, so replaying or recording never depends on the previous take. The
+// flight's are written in flight time and shifted once, here.
+export const FLIGHT_CHAPTERS = [
+  { start: 0, end: PROLOGUE_EXPAND.start, label: 'Prologue · points' },
+  { start: PROLOGUE_EXPAND.start, end: PROLOGUE_SECONDS, label: 'Prologue · bounds' },
+  ...score.shots.map(({ start, end, label }) => ({
+    start: start + PROLOGUE_SECONDS, end: end + PROLOGUE_SECONDS, label,
+  })),
+];
+
 export const FLIGHT_SUBTITLES = [
-  { start: 1, end: 5, text: 'One parsec from Earth. The nearest stars.' },
-  { start: 5.5, end: 9.5, text: 'Each streak is one star’s distance uncertainty.' },
-  { start: 12, end: 16, text: 'Leaving the solar neighbourhood.' },
-  { start: 21, end: 25.5, text: 'Farther out, distances are known less well.' },
-  { start: 28.5, end: 33.5, text: 'Distant stars stretch into spears.' },
-  { start: 36.5, end: 38.6, text: 'Drawn as points: an ordinary star map.' },
-  { start: 39, end: 42, text: 'Drawn as measured: a range of possible distances.' },
-  { start: 43.5, end: 48, text: 'Every streak points back at Earth.' },
-  { start: 49, end: 53.5, text: 'Uncertainty lies along the line of sight.' },
-  { start: 55.5, end: 60, text: 'Outward, to fifteen thousand parsecs.' },
-  { start: 65, end: 69.5, text: 'Longer streaks now drawn fainter. The well-measured stars remain.' },
-  { start: 70.6, end: 73.5, text: 'Every star map looks like this.' },
-  { start: 73.9, end: 77.4, text: 'This is how well each distance is known.' },
-] as const;
+  ...score.prologue.cues.map(({ start, end, text }) => ({ start, end, text })),
+  ...score.cues.map(({ start, end, text }) => ({
+    start: start + PROLOGUE_SECONDS, end: end + PROLOGUE_SECONDS, text,
+  })),
+];
 
 const smooth = (x: number) => x * x * (3 - 2 * x);
 const beat = (seconds: number, start: number, end: number) =>
   smooth(MathUtils.clamp((seconds - start) / (end - start), 0, 1));
+const span = (seconds: number, range: { start: number; end: number }) =>
+  beat(seconds, range.start, range.end);
+const vector = (xyz: Vec) => new Vector3(xyz[0], xyz[1], xyz[2]);
+const placed = (point: Waypoint) => vector(point.at).setLength(point.radius);
 
 /**
  * The subtitle on screen at a film time, with its fade; empty between cues.
@@ -60,40 +104,56 @@ export function flightSubtitleAt(seconds: number): { text: string; opacity: numb
   return { text: cue.text, opacity };
 }
 
-/** Points are held for `hold` seconds at each comparison; the closing one lingers. */
-export const POINTS_HOLD = { 36: 1, 70: 1.6 } as const;
-
 export function flightMorph(seconds: number): number {
-  // Each comparison: 1.5s collapse, the hold as points, 1.5s re-expansion.
-  const start = seconds < 70 ? 36 : 70;
-  const hold = POINTS_HOLD[start];
-  return 1 - beat(seconds, start, start + 1.5)
-    + beat(seconds, start + 1.5 + hold, start + 3 + hold);
+  // The prologue opens as points and expands once, reaching bounds before the
+  // flight begins, which is where the flight's own first frame already sits.
+  if (seconds < PROLOGUE_SECONDS) return span(seconds, PROLOGUE_EXPAND);
+  const t = seconds - PROLOGUE_SECONDS;
+  const { collapse, at } = score.comparisons;
+  // Before the first comparison every term is clamped to its start, so the
+  // bounds read whole; the same holds after the last one re-expands.
+  const active = at.reduce((chosen, c) => (t >= c.start ? c : chosen), at[0]);
+  return 1 - beat(t, active.start, active.start + collapse)
+    + beat(t, active.start + collapse + active.hold,
+      active.start + 2 * collapse + active.hold);
 }
 
+/**
+ * How much black covers the frame, hiding the cut into the flight. Symmetric
+ * about the join and zero everywhere else, so it is the only place in the film
+ * where anything is drawn over the sky besides the counter and the subtitle.
+ */
+export function flightDip(seconds: number): number {
+  return 1 - beat(Math.abs(seconds - PROLOGUE_SECONDS), DIP.hold, DIP.hold + DIP.fade);
+}
+
+// The remaining choreography is zero throughout the prologue, so subtracting
+// the offset is enough: a negative flight time clamps every beat to its start.
+
 export function flightTreatmentMix(seconds: number): number {
-  return beat(seconds, 64, 70);
+  return span(seconds - PROLOGUE_SECONDS, score.treatment);
 }
 
 /** The closing approach turns across the field, then returns to Earth. */
 export function flightLookOffset(seconds: number): number {
-  return MathUtils.degToRad(25) * beat(seconds, 54, 60) * (1 - beat(seconds, 64, 70));
+  const t = seconds - PROLOGUE_SECONDS;
+  const { degrees, turn, settle } = score.look;
+  return MathUtils.degToRad(degrees) * span(t, turn) * (1 - span(t, settle));
 }
 
-/** Integral of a smooth velocity ramp: constant log speed except at shot ends. */
+/** Integral of a smooth velocity ramp: constant log speed except at leg ends. */
 function travel(seconds: number, duration: number): number {
   const t = MathUtils.clamp(seconds, 0, duration);
-  const ramp = 2;
   const edge = (s: number) => {
-    const x = s / ramp;
-    return ramp * (x ** 3 - x ** 4 / 2);
+    const x = s / RAMP;
+    return RAMP * (x ** 3 - x ** 4 / 2);
   };
-  if (t < ramp) return edge(t);
-  if (t > duration - ramp) return duration - ramp - edge(duration - t);
-  return t - ramp / 2;
+  if (t < RAMP) return edge(t);
+  if (t > duration - RAMP) return duration - RAMP - edge(duration - t);
+  return t - RAMP / 2;
 }
 
-/** Invert radius on an outward Catmull–Rom spline, retaining its actual shape. */
+/** Invert radius on an outward Catmull-Rom spline, retaining its actual shape. */
 function radialPath(points: Vector3[]) {
   const curve = new CatmullRomCurve3(points, false, 'centripetal');
   const divisions = 8_192;
@@ -120,42 +180,50 @@ function radialPath(points: Vector3[]) {
 
 /** Camera choreography only. No catalogue positions or errors are modified. */
 export function createFlightPath() {
-  const near = new CatmullRomCurve3([
-    new Vector3(-0.4, -1, 0.04), new Vector3(0, -1, 0), new Vector3(0.4, -1, 0.08),
-  ], false, 'centripetal');
+  const { path, cuts, aim } = score;
+  const finish = path.far[path.far.length - 1];
+  const near = new CatmullRomCurve3(path.near.map(vector), false, 'centripetal');
   const localEnd = near.getPoint(1);
-  const anchor = new Vector3(0, -1, 0.3).setLength(2_000);
-  const outward = radialPath([
-    localEnd, new Vector3(0.35, -1, 0.1).setLength(10),
-    new Vector3(0.18, -1, 0.2).setLength(100),
-    new Vector3(0.05, -1, 0.28).setLength(1_000), anchor,
-  ]);
-  const north = new Vector3(0, 0, 1);
-  // Translating over 2,300 pc around Earth makes real parallax, not just yaw.
-  const side = new CatmullRomCurve3([0, 25, 50, 75].map((angle) =>
-    anchor.clone().applyAxisAngle(north, MathUtils.degToRad(angle))), false, 'centripetal');
+  const anchor = placed(path.anchor);
+  const outward = radialPath([localEnd, ...path.climb.map(placed), anchor]);
+  const polar = vector(path.polar);
+  const side = new CatmullRomCurve3(path.side.map((angle) =>
+    anchor.clone().applyAxisAngle(polar, MathUtils.degToRad(angle))), false, 'centripetal');
   const sideEnd = side.getPoint(1);
-  const end = sideEnd.clone().applyAxisAngle(north, MathUtils.degToRad(-10)).setLength(15_000);
-  const far = radialPath([
-    sideEnd, sideEnd.clone().setLength(5_000),
-    sideEnd.clone().applyAxisAngle(north, MathUtils.degToRad(-5)).setLength(10_000), end,
-  ]);
-  const logRate = Math.log10(2_000 / localEnd.length()) / 24;
-  const farDuration = Math.log10(15_000 / 2_000) / logRate + 2;
+  const turned = (leg: { turn: number; radius: number }) => sideEnd.clone()
+    .applyAxisAngle(polar, MathUtils.degToRad(leg.turn)).setLength(leg.radius);
+  const far = radialPath([sideEnd, ...path.far.map(turned)]);
+  const end = turned(finish);
+
+  // Equal time per distance decade, set by the climb and reused by the closing
+  // leg, so the film never changes how fast a decade goes by.
+  const logRate = Math.log10(path.anchor.radius / localEnd.length())
+    / (cuts.climb - cuts.near - RAMP);
+  const farDuration = Math.log10(finish.radius / path.anchor.radius) / logRate + RAMP;
+
+  // The prologue holds the anchor, drifting onto it. Its distance from the
+  // flight's opening position is the whole reason for the dip.
   return {
     positionAt(seconds: number, target: Vector3) {
-      if (seconds < 10) return near.getPoint(beat(seconds, 0, 10), target);
-      if (seconds < 36) return outward(
-        localEnd.length() * 10 ** (logRate * travel(seconds - 10, 26)), target);
-      if (seconds < 42) return target.copy(anchor);
-      if (seconds < 54) return side.getPoint(beat(seconds, 42, 54), target);
-      if (seconds < 54 + farDuration) return far(
-        2_000 * 10 ** (logRate * travel(seconds - 54, farDuration)), target);
+      if (seconds < PROLOGUE_SECONDS) {
+        return target.copy(anchor).applyAxisAngle(polar,
+          MathUtils.degToRad(score.prologue.driftDegrees)
+            * (1 - beat(seconds, 0, PROLOGUE_SECONDS)));
+      }
+      const t = seconds - PROLOGUE_SECONDS;
+      if (t < cuts.near) return near.getPoint(beat(t, 0, cuts.near), target);
+      if (t < cuts.climb) return outward(localEnd.length()
+        * 10 ** (logRate * travel(t - cuts.near, cuts.climb - cuts.near)), target);
+      if (t < cuts.hold) return target.copy(anchor);
+      if (t < cuts.side) return side.getPoint(beat(t, cuts.hold, cuts.side), target);
+      if (t < cuts.side + farDuration) return far(path.anchor.radius
+        * 10 ** (logRate * travel(t - cuts.side, farDuration)), target);
       return target.copy(end);
     },
     targetAt(seconds: number, target: Vector3) {
       // Earth stays within the frame but moves off-centre during the side pass.
-      return target.set(500 * beat(seconds, 42, 46) * (1 - beat(seconds, 50, 54)), 0, 0);
+      const t = seconds - PROLOGUE_SECONDS;
+      return target.set(aim.parsecs * span(t, aim.out) * (1 - span(t, aim.back)), 0, 0);
     },
   };
 }

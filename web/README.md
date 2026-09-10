@@ -81,42 +81,90 @@ catalogue even when the camera is at 20,000 pc. See the
 [Three.js renderer documentation](https://threejs.org/docs/pages/WebGLRenderer.html)
 for the depth-buffer performance tradeoff.
 
+## The score
+
+The film is separated from the machinery that plays it.
+
+`src/flight.ts` is the projector: easing, the spline inversion that gives every
+distance decade equal time, the subtitle fader, the frame-indexed recording
+clock, and the checks that reject a malformed score. It contains no waypoint, no
+cut time and no line of narration.
+
+`src/score.ts` is the film: where the camera goes, when it cuts, and what the
+cards say. It is **not committed**. The renderer is MIT; a score is not, because
+the choreography and the writing are the authored work rather than the code that
+executes them. See `NOTICE`.
+
+A fresh clone therefore has no `src/score.ts`. `scripts/score.mjs` copies
+`src/score.example.ts` into place, and `dev`, `build`, `test` and `export` all
+run it first, so the repo works out of the box. The example is a short, plain
+flight that exists to demonstrate the shape and keep the renderer exercisable.
+It is not the film published from this project. Copy it, rewrite it, and your
+own flight stays yours.
+
+`src/scoreTypes.ts` defines the shape a score must take. A score is verified
+once on load and rejected loudly rather than played wrong: shots must be
+contiguous and cover the flight, and every leg must end on a shot boundary, or a
+camera discontinuity would land inside a shot where no dip is covering it.
+
+Tests split the same way. `tests/flight.test.mjs` holds the invariants every
+score must satisfy and passes against the example as readily as against the
+author's film. `tests/score.test.mjs` pins the current score's own numbers and
+is not committed.
+
+Nothing in a score can touch the catalogue. It moves the camera and writes the
+captions; parallaxes, error bars and drawn segments are beyond its reach.
+
 ## Scripted flight and recording
 
-After the catalogue loads, press **F** (or **Fly**) for a 78-second flight.
-F restarts from the local field; **Escape** returns to orbit controls at the
-current camera position, facing Earth. The flight stops Sweep and disables orbit
-input. The cursor and page chrome are hidden. The flight is presented as a
-film, with two things on screen and nothing else:
+After the catalogue loads, press **F** (or **Fly**) for a 98-second film: a
+20-second prologue, then the 78-second flight. F restarts from the prologue;
+**Escape** returns to orbit controls at the current camera position, facing
+Earth. The film stops Sweep and disables orbit input. The cursor and page
+chrome are hidden. It is presented as a film, with two things on screen and
+nothing else:
 
 - **Distance from Earth**, small in the top-right corner: the camera's actual
-  distance, with two decimal places below 10 pc. This is the camera's position
-  in the visualization, not a new stellar distance measurement.
+  distance, on two lines under one label. The catalogue's own parsecs first,
+  then the same radius in light years, which is the unit the subtitles use and
+  the one a viewer who has never met a parsec can picture. Both units are
+  spelled out, and both lines share the label's right edge so the block stays
+  flush as digits come and go. The conversion is exact by definition, and
+  digits fall as the number grows: two decimals near Earth, one out to a
+  thousand, none beyond. This is the camera's position in the visualization,
+  not a new stellar distance measurement. `distanceLines` in `src/overlay.ts`
+  formats both from one radius, so the two can never disagree.
 - **Subtitles**, bottom-centre: a line of a few words at a time, timed to the
-  shots, from `FLIGHT_SUBTITLES` in `src/flight.ts`. Each line describes only
-  what the frame is showing at that moment. Lines never overlap; each fades in
-  and out over `SUBTITLE_FADE` (0.35s), with at least that gap between cues, and
-  the last clears before the closing frame.
+  shots, from `FLIGHT_SUBTITLES`, which the projector builds from the score
+  it was handed. The prologue's cards
+  explain the notation; every line after them describes only what the frame is
+  showing at that moment. Lines never overlap; each fades in and out over
+  `SUBTITLE_FADE` (0.35s), with at least that gap between cues, and the last
+  clears before the closing frame.
+
+Both are painted on a canvas over the sky by `src/overlay.ts`, which the video
+export runs over the same rendered frame, so what you watch and what lands in
+the file come from one implementation. Sizes are fractions of the frame height
+against a 720-high reference, which keeps a 1080p export and a 720p window
+proportionally identical. The page also keeps a silent copy of the current
+subtitle in an `aria-live` region for assistive technology.
 
 The fade is computed from film time rather than by a CSS transition: playback
 that cannot hold the frame rate advances film time more slowly than the wall
 clock, and a transition would drift out of step with the cut it belongs to.
 
-| Film time | Subtitle |
-| --- | --- |
-| 1–5s | One parsec from Earth. The nearest stars. |
-| 5.5–9.5s | Each streak is one star's distance uncertainty. |
-| 12–16s | Leaving the solar neighbourhood. |
-| 21–25.5s | Farther out, distances are known less well. |
-| 28.5–33.5s | Distant stars stretch into spears. |
-| 36.5–38.6s | Drawn as points: an ordinary star map. |
-| 39–42s | Drawn as measured: a range of possible distances. |
-| 43.5–48s | Every streak points back at Earth. |
-| 49–53.5s | Uncertainty lies along the line of sight. |
-| 55.5–60s | Outward, to fifteen thousand parsecs. |
-| 65–69.5s | Longer streaks now drawn fainter. The well-measured stars remain. |
-| 70.6–73.5s | Every star map looks like this. |
-| 73.9–77.4s | This is how well each distance is known. |
+The prologue's five cards are the only lines that explain the notation rather
+than describe the shot. They are written for someone who has never seen the
+picture: no unit is used at all, and one idea lands per card. Cards three and
+four straddle the expansion, so the change is read while it happens.
+
+The cards themselves are not reproduced here. Narration is part of the score
+and the score is not committed; see **The score** below.
+
+Only the prologue's times are written as film time. The
+flight's cues keep their own clock and are shifted by `PROLOGUE_SECONDS` once,
+where the two lists are concatenated, so changing the prologue's length never
+moves one of them.
 
 Normal completion restores the UI; recording holds the closing frame and the
 counter until Escape or another F. Switching away from the tab pauses
@@ -124,18 +172,32 @@ playback. Interactive playback is wall-clock timed, so a long stall skips film
 time and can pass over a short cue; recording is frame-indexed and shows every
 one.
 
-The chapter boundaries are exported as `FLIGHT_CHAPTERS` in `src/flight.ts`:
+The chapter boundaries are exported as `FLIGHT_CHAPTERS`:
 
-| Film time | Shot |
-| --- | --- |
-| 0–10s | Drift about 0.8 pc through the local field at roughly 1 pc, morph 1. |
-| 10–36s | Travel to 2,000 pc at constant log-distance speed, with smooth acceleration and braking. |
-| 36–42s | Stationary comparison: collapse 36–37.5s, points until 38.5s, expand to 40s, hold bounds. |
-| 42–54s | A 75° lateral arc at about 2,000 pc: over 2,300 pc of translation, keeping Earth's convergence point in frame. |
-| 54–64s | Continue at the same log-distance speed to 15,000 pc, arriving around 62.4s; settle and look across the field. |
-| 64–70s | Crossfade Plate → Confidence and turn back toward Earth. |
-| 70–74.6s | Stationary closing comparison: 1.5s collapse, 1.6s points (`POINTS_HOLD`), 1.5s re-expansion. |
-| 74.6–78s | Hold Confidence at the catalogue's full bounds. |
+The shots are not listed here for the same reason. Their labels and boundaries
+come from the score, and `FLIGHT_CHAPTERS` is what the UI reads.
+
+The prologue holds the same 2,000 pc anchor the flight's first comparison uses,
+drifting six degrees around ICRS north onto it. That radius is not a
+preference. A point field only reads where the catalogue concentrates in front
+of the camera: from inside the local field at 1 pc every mark is a lone pixel
+and the frame is empty, which is the opposite of what the cards claim. The
+prologue expands to morph 1 before the flight begins, which is the state the
+flight's first frame already assumed, so nothing about the choreography
+changed.
+
+Ending at 2,000 pc and starting the flight at 1 pc is a jump in both the frame
+and the counter, and no camera move joins them honestly, so the film cuts.
+`flightDip` blacks the whole frame out across that cut, counter and subtitle
+included, holding full black for 0.15s on either side so the change of position
+is never on screen. `src/overlay.ts` paints it last, over everything, in the
+same routine the export uses. It is the only edit in the film that is not
+continuous, and the only fade; `flightDip` is zero at every other frame, and
+the tests assert both that and that exactly one position discontinuity exists.
+
+Every function in `src/flight.ts` takes film time; the flight's own cut points
+appear only after `seconds - PROLOGUE_SECONDS`, which is why the flight-time
+column above is what the source and the tests both read.
 
 The camera follows centripetal Catmull–Rom splines, with ICRS +Z up. Outward
 legs invert a precomputed radius lookup on the spline: 10→100 and 100→1,000 pc
@@ -158,7 +220,64 @@ inside the frame: the current development export extends to 20,000 pc. The
 0.001 pc near plane lets close segments cross the camera; the GPU clips the
 lines against the view volume without moving catalogue endpoints onto the plane.
 
-For screen capture, run either command from `web`:
+## Exporting a video file
+
+`npm run export` writes a finished MP4 with the soundtrack. Prefer it over
+screen capture: it is deterministic. The page renders film frame *n* as film
+second *n* / 60, posts it to the export script, and waits for the encoder to
+take it before drawing the next one, so no frame is ever dropped, duplicated or
+early. A slow machine makes the export take longer and changes nothing about
+the result.
+
+It needs **ffmpeg** on `PATH`. On Windows:
+
+```sh
+winget install --id Gyan.FFmpeg -e
+```
+
+Open a new terminal afterwards so `PATH` is picked up, or pass
+`--ffmpeg <path to ffmpeg.exe>`. Then, from `web`:
+
+```sh
+npm run export
+```
+
+That builds, starts a local server, opens a browser tab, and renders. Keep the
+tab in front until it reports it is complete. Frames are piped straight into
+ffmpeg, so a 98-second film never lands on disk as thousands of stills. The
+default is 1920 × 1080 at 60 fps to `exports/uncertainty-sky.mp4`, which the
+repository ignores.
+
+| Option | Default | |
+| --- | --- | --- |
+| `--width`, `--height` | 1920 × 1080 | Both must be even, for x264 with `yuv420p`. |
+| `--seconds` | the film's length | Export only the opening *n* seconds, to check a change quickly. |
+| `--out` | `exports/uncertainty-sky.mp4` | |
+| `--music` | `music/soundtrack.mp3` | |
+| `--crf` | 16 | x264 quality; lower is better and larger. |
+| `--ffmpeg` | `ffmpeg` | Also read from the `FFMPEG` environment variable. |
+| `--no-audio-fade` | fade on | Keep the soundtrack's own ending instead. |
+| `--no-open` | opens | Print the URL rather than opening a browser. |
+
+Pass options after `--`, as in `npm run export -- --width 2560 --height 1440`.
+
+The sky is rendered at twice the video's resolution and downsampled into each
+frame, the same supersampling the on-screen recording mode uses: a 1080p export
+draws at 3840 × 2160. That cost dominates the export, and it is fill-rate bound,
+so it grows as the sky fills with streaks and it depends heavily on the GPU. The
+script prints a running estimate from the frames it has already taken; use
+`--seconds` to check a change before committing to the full 98.
+
+**Audio.** The soundtrack starts at 0:00 and the film is the master: the output
+is exactly 98 seconds, so a longer track is cut to that length and a shorter one
+simply ends early. `music/soundtrack.mp3` runs 2:07, so it is cut at 98s, with a
+two-second fade-out so it does not stop dead. Pass `--no-audio-fade` to hear the
+cut as it falls. The mp3 lives outside `public/`, so it is never shipped in the
+web bundle; only the export reads it.
+
+## Screen capture
+
+For screen capture instead, run either command from `web`:
 
 ```sh
 npm run dev -- --record
@@ -174,7 +293,7 @@ the distance counter and subtitles; capture the canvas/window content or enter
 browser fullscreen to exclude browser toolbars. The flag does not start a screen
 recorder or create a video file. Before the take, check the fps readout in the
 panel at **20,000 pc**: recording is frame-indexed, so a machine that cannot hold
-60 fps at your window size plays the film slower than 78 seconds rather than
+60 fps at your window size plays the film slower than 98 seconds rather than
 dropping frames, and a screen recorder would capture that slow playback. Use a
 smaller window if the readout falls short.
 
@@ -184,10 +303,10 @@ pixel ratio to keep their CSS-pixel sizes. This costs four times the pixels;
 it is not free. Interactive mode keeps pixel ratio 1.
 
 Recording renders one frame per 1/60-second film step and caps presentation at
-60 Hz. It presents all 4,681 samples including t=0 and t=78, then holds t=78.
+60 Hz. It presents all 5,881 samples including t=0 and t=98, then holds t=98.
 Camera, morph and treatment depend on the frame number, so delayed callbacks
 do not skip film frames. If rendering cannot sustain 60 fps, playback takes
-longer than 78 seconds of wall time; an external screen recorder can still drop
+longer than 98 seconds of wall time; an external screen recorder can still drop
 or duplicate frames. Fixed steps alone do not make a slow screen capture smooth.
 Prefer the production preview and a foreground browser window.
 
@@ -198,6 +317,10 @@ Prefer the production preview and a foreground browser window.
   manifest and decode-rule checks, plus the colour ramp (temperature monotonic
   and anchored, locus never green, sentinel slot reserved, legend gradient built
   from the same bytes). Byte fixtures are isolated tests, never shown as stars.
+  Overlay tests cover the counter in both units and the right edge it stacks
+  them on, cue-driven subtitles, height-proportional
+  scaling, balanced wrapping within the safe width, and every exported frame
+  laying out inside the frame.
   Flight tests cover chapter continuity, subtitle ordering, spacing and fades
   at every recorded frame, both stationary comparisons, the local
   drift, equal decade timing, lateral displacement and convergence framing,

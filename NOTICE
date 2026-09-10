@@ -1,0 +1,58 @@
+Uncertainty Sky — licensing scope
+=================================
+
+The MIT License in LICENSE covers the source code in this repository and
+nothing else. Four things with different owners meet in this project, and the
+MIT grant reaches only the first of them.
+
+
+1. Source code (/pipeline, /web)
+
+   Copyright (c) 2026 Caleb Andersen. Licensed under the MIT License; see
+   LICENSE. Run it, modify it, redistribute it, ship it commercially. The only
+   obligation is to keep the copyright notice with the source.
+
+
+2. Gaia catalogue data
+
+   Not owned by this project and not redistributed here. The pipeline fetches
+   it at run time from the ESA Gaia archive, and .gitignore keeps every derived
+   buffer out of version control. Individual astrometric measurements are
+   facts, though database rights may still attach to the catalogue as a whole
+   in some jurisdictions. ESA asks that published work using Gaia data carry
+   the standard acknowledgement:
+
+     This work has made use of data from the European Space Agency (ESA)
+     mission Gaia (https://www.cosmos.esa.int/gaia), processed by the Gaia
+     Data Processing and Analysis Consortium (DPAC,
+     https://www.cosmos.esa.int/web/gaia/dpac/consortium). Funding for the
+     DPAC has been provided by national institutions, in particular the
+     institutions participating in the Gaia Multilateral Agreement.
+
+   Verify this wording against ESA's current credit page before publishing.
+   The copy above is reproduced for convenience and is not authoritative.
+
+
+3. Rendered video output
+
+   All rights reserved. Files produced by web/scripts/export.mjs are a separate
+   audiovisual work. Their authorship lies in the flight path, camera timing,
+   palette, treatment and edit decisions, which the code executes rather than
+   originates. The MIT grant in section 1 does not extend to them.
+
+   The score that directs a render is held the same way. web/src/score.ts is
+   the authored flight - waypoints, cut points and narration - and is not
+   committed; web/src/score.example.ts is a plain stand-in that keeps the
+   renderer runnable. The projector that plays a score, web/src/flight.ts, is
+   MIT like the rest of the code.
+
+   You are welcome to run the exporter and publish renders you direct yourself.
+   Renders published by this project's author are not licensed for
+   redistribution.
+
+
+4. Soundtrack
+
+   Not included in this repository and not covered by any license here.
+   web/music/ is gitignored for that reason. Any render carrying audio needs
+   its music licensed independently, by whoever publishes that render.
